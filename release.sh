@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 
+pip install -r requirements-release.txt
 
 git checkout -b v${FDK_VERSION}-stable
 git push origin v${FDK_VERSION}-stable
