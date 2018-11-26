@@ -12,24 +12,16 @@
 #    License for the specific language governing permissions and limitations
 #    under the License.
 
-import testtools
-
-from fdk.headers import GoLikeHeaders
-
-
-class TestHeaders(testtools.TestCase):
-
-    def test_headers(self):
-        header_dict = {
-            "Accept": "*/*",
-            "User-Agent": "curl/7.54.0",
-            "Content-Type": ["text/plain"]
-        }
-        headers = GoLikeHeaders(header_dict)
-
-        self.assertEqual(headers.for_dump(),
-                         self.to_go_like_headers(header_dict))
-
-    def to_go_like_headers(self, headers):
-        return {k: v if isinstance(v, (list, tuple)) else [v]
-                for k, v in headers.items()}
+DEFAULT_DEADLINE = 30
+HTTPSTREAM = "http-stream"
+FN_FORMAT = "FN_FORMAT"
+FN_LISTENER = "FN_LISTENER"
+FN_HTTP_PREFIX = "Fn-Http-H-"
+FN_HTTP_STATUS = "Fn-Http-Status"
+FN_DEADLINE = "Fn-Deadline"
+FN_HTTP_REQUEST_URL = "Fn-Http-Request-Url"
+FN_CALL_ID = "Fn-Call-Id"
+FN_HTTP_METHOD = "Fn-Http-Method"
+FN_APP_ID = "FN_APP_ID"
+FN_ID = "FN_FN_ID"
+CONTENT_TYPE = "Content-Type"
