@@ -14,7 +14,30 @@
 # limitations under the License.
 #
 
-FROM python:3.6-slim-stretch
+from fdk.async_http import protocol
 
-RUN apt-get update && apt-get upgrade -qy && apt-get clean
-RUN addgroup --system --gid 1000 --system fn && adduser --system --uid 1000 --ingroup fn fn
+
+def http_protocol(**kwargs):
+    return protocol.HttpProtocol(
+        loop=None, request_handler=None, error_handler=None,
+        **kwargs)
+
+
+def test_keep_alive_time_left_before_time_is_set():
+    p = http_protocol()
+
+    protocol.current_time = None
+    p._last_request_time = None
+
+    time_left = p.keep_alive_time_left()
+    assert 0 == time_left
+
+
+def test_keep_alive_time_left_after_time_is_set():
+    p = http_protocol(keep_alive_timeout=15)
+
+    protocol.current_time = 96
+    p._last_response_time = 64
+
+    time_left = p.keep_alive_time_left()
+    assert 15 - 32 == time_left

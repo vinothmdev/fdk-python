@@ -14,7 +14,26 @@
 # limitations under the License.
 #
 
-FROM python:3.6-slim-stretch
+import os
+import sys
 
-RUN apt-get update && apt-get upgrade -qy && apt-get clean
-RUN addgroup --system --gid 1000 --system fn && adduser --system --uid 1000 --ingroup fn fn
+from fdk import customer_code
+
+from fdk.tests import tcp_debug
+
+
+def main():
+    if len(sys.argv) < 3:
+        print("Usage: fdk-tcp-debug <port> <func_module> [entrypoint]")
+        sys.exit("at least func module must be specified")
+
+    if not os.path.exists(sys.argv[2]):
+        sys.exit("Module: {0} doesn't exist".format(sys.argv[1]))
+
+    if len(sys.argv) > 3:
+        handler = customer_code.Function(
+            sys.argv[2], entrypoint=sys.argv[3])
+    else:
+        handler = customer_code.Function(sys.argv[1])
+
+    tcp_debug.handle(handler, port=int(sys.argv[1]))

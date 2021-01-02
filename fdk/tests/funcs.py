@@ -1,22 +1,23 @@
-# All Rights Reserved.
 #
-#    Licensed under the Apache License, Version 2.0 (the "License"); you may
-#    not use this file except in compliance with the License. You may obtain
-#    a copy of the License at
+# Copyright (c) 2019, 2020 Oracle and/or its affiliates. All rights reserved.
 #
-#         http://www.apache.org/licenses/LICENSE-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-#    License for the specific language governing permissions and limitations
-#    under the License.
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 import time
-import ujson
+import json
 
 from fdk import response
-
 
 xml = """<!DOCTYPE mensaje SYSTEM "record.dtd">
 <record>
@@ -30,33 +31,43 @@ xml = """<!DOCTYPE mensaje SYSTEM "record.dtd">
 </record>"""
 
 
+def code404(ctx, **kwargs):
+    return response.Response(ctx, status_code=404)
+
+
+def code502(ctx, **kwargs):
+    return response.Response(ctx, status_code=502)
+
+
+def code504(ctx, **kwargs):
+    return response.Response(ctx, status_code=504)
+
+
 def dummy_func(ctx, data=None):
     if data is not None and len(data) > 0:
-        body = ujson.loads(data)
+        body = json.loads(data)
     else:
         body = {"name": "World"}
     return "Hello {0}".format(body.get("name"))
 
 
 def encaped_header(ctx, **kwargs):
-    httpctx = ctx.HTTPContext()
-    hs = httpctx.Headers()
-    v = hs.get("custom-header-maybe")
-    return response.RawResponse(
-        httpctx, response_data="OK", status_code=200,
-        headers={"Content-Type": "text/plain",
-                 "custom-header-maybe": v})
+    return response.Response(
+        ctx, response_data="OK", status_code=200,
+        headers=ctx.Headers())
 
 
 def content_type(ctx, data=None):
-    return response.RawResponse(
+    return response.Response(
         ctx, response_data="OK", status_code=200,
-        headers={"Content-Type": "text/plain"})
+        headers={"Content-Type": "application/json"})
 
 
 def custom_response(ctx, data=None):
-    return response.RawResponse(
-        ctx, response_data=dummy_func(ctx, data=data), status_code=201)
+    return response.Response(
+        ctx,
+        response_data=dummy_func(ctx, data=data),
+        status_code=201)
 
 
 def expectioner(ctx, data=None):
@@ -68,7 +79,6 @@ def none_func(ctx, data=None):
 
 
 def timed_sleepr(timeout):
-
     def sleeper(ctx, data=None):
         time.sleep(timeout)
 
@@ -80,37 +90,60 @@ async def coro(ctx, **kwargs):
 
 
 def valid_xml(ctx, **kwargs):
-    return response.RawResponse(
+    return response.Response(
         ctx, response_data=xml, headers={
-            "Content-Type": "application/xml",
+            "content-type": "application/xml",
         }
     )
 
 
 def invalid_xml(ctx, **kwargs):
-    return response.RawResponse(
-        ctx, response_data=ujson.dumps(xml), headers={
-            "Content-Type": "application/xml",
+    return response.Response(
+        ctx, response_data=json.dumps(xml), headers={
+            "content-type": "application/xml",
         }
     )
 
 
 def verify_request_headers(ctx, **kwargs):
-    return response.RawResponse(
+    return response.Response(
         ctx,
-        response_data=ujson.dumps(xml),
+        response_data=json.dumps(xml),
         headers=ctx.Headers()
     )
 
 
 def access_request_url(ctx, **kwargs):
-    httpctx = ctx.HTTPContext()
-    hs = httpctx.Headers()
-    method = httpctx.Method()
-    request_url = hs.get("Fn-Http-Request-Url")
-    return response.RawResponse(
-        httpctx, response_data="OK", headers={
+    method = ctx.Method()
+    request_url = ctx.RequestURL()
+    return response.Response(
+        ctx, response_data="OK", headers={
             "Response-Request-URL": request_url,
             "Request-Method": method,
         }
     )
+
+
+captured_context = None
+
+
+def setup_context_capture():
+    global captured_context
+    captured_context = None
+
+
+def get_captured_context():
+    global captured_context
+    my_context = captured_context
+    captured_context = None
+    return my_context
+
+
+def capture_request_ctx(ctx, **kwargs):
+    global captured_context
+    captured_context = ctx
+    return response.Response(ctx, response_data="OK")
+
+
+def binary_result(ctx, **kwargs):
+    return response.Response(ctx, response_data=bytes([1, 2, 3, 4, 5]))

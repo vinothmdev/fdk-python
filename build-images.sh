@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 #
 # Copyright (c) 2019, 2020 Oracle and/or its affiliates. All rights reserved.
 #
@@ -14,7 +15,10 @@
 # limitations under the License.
 #
 
-FROM python:3.6-slim-stretch
 
-RUN apt-get update && apt-get upgrade -qy && apt-get clean
-RUN addgroup --system --gid 1000 --system fn && adduser --system --uid 1000 --ingroup fn fn
+set -xe
+
+pyversion=${1:-"3.8.5"}
+
+pushd images/build-stage/${pyversion} && docker build -t fnproject/python:${pyversion}-dev . && popd
+pushd images/runtime/${pyversion} && docker build -t fnproject/python:${pyversion} . && popd

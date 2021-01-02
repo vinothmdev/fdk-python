@@ -1,3 +1,4 @@
+#!/usr/bin/env bash
 #
 # Copyright (c) 2019, 2020 Oracle and/or its affiliates. All rights reserved.
 #
@@ -14,7 +15,18 @@
 # limitations under the License.
 #
 
-FROM python:3.6-slim-stretch
 
-RUN apt-get update && apt-get upgrade -qy && apt-get clean
-RUN addgroup --system --gid 1000 --system fn && adduser --system --uid 1000 --ingroup fn fn
+user="fnproject"
+image="python"
+
+runtime36="3.6"
+docker push ${user}/${image}:${runtime36}
+docker push ${user}/${image}:${runtime36}-dev
+
+runtime371="3.7.1"
+docker push ${user}/${image}:${runtime371}
+docker push ${user}/${image}:${runtime371}-dev
+
+runtime385="3.8.5"
+docker push ${user}/${image}:${runtime385}
+docker push ${user}/${image}:${runtime385}-dev

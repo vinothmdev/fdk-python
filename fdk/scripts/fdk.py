@@ -14,7 +14,25 @@
 # limitations under the License.
 #
 
-FROM python:3.6-slim-stretch
+import fdk
+import os
+import sys
 
-RUN apt-get update && apt-get upgrade -qy && apt-get clean
-RUN addgroup --system --gid 1000 --system fn && adduser --system --uid 1000 --ingroup fn fn
+from fdk import customer_code
+
+
+def main():
+    if len(sys.argv) < 1:
+        print("Usage: fdk <func_module> [entrypoint]")
+        sys.exit("at least func module must be specified")
+
+    if not os.path.exists(sys.argv[1]):
+        sys.exit("Module: {0} doesn't exist".format(sys.argv[1]))
+
+    if len(sys.argv) > 2:
+        handler = customer_code.Function(
+            sys.argv[1], entrypoint=sys.argv[2])
+    else:
+        handler = customer_code.Function(sys.argv[1])
+
+    fdk.handle(handler)

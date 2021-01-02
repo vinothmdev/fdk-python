@@ -1,130 +1,76 @@
-# All Rights Reserved.
 #
-#    Licensed under the Apache License, Version 2.0 (the "License"); you may
-#    not use this file except in compliance with the License. You may obtain
-#    a copy of the License at
+# Copyright (c) 2019, 2020 Oracle and/or its affiliates. All rights reserved.
 #
-#         http://www.apache.org/licenses/LICENSE-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-#    License for the specific language governing permissions and limitations
-#    under the License.
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 from fdk import constants
 
 
-class GoLikeHeaders(object):
-
-    def __init__(self, headers):
-        """
-        Go-like headers, this format necessary for Fn
-        :param headers: HTTP headers
-        """
-        if not isinstance(headers, dict):
-            raise TypeError("Invalid headers type: {}, only dict allowed."
-                            .format(type(headers)))
-        self.__headers = {}
-
-        for k, v in headers.copy().items():
-            self.set(k, v)
-
-    def __contains__(self, item: str):
-        """
-        Implements `if ... in ...` protocol on headers
-        :param item: header key
-        :type item: str
-        :return: true/false whether header key is headers
-        :rtype: bool
-        """
-        return item in self.__headers
-
-    def get(self, key, default=None):
-        """
-        :param key:
-        :param default:
-        :return:
-        """
-        if key in self.__headers:
-            return (self.__headers[key][0]
-                    if len(self.__headers[key]) == 1
-                    else self.__headers[key])
-        else:
-            return default
-
-    def set(self, key, value):
-        """
-        :param key:
-        :param value:
-        :return:
-        """
-        if not isinstance(value, (list, tuple)):
-            value = [str(value), ]
-        self.__headers[key] = value
-
-    def append(self, key, value):
-        """
-        :param key:
-        :param value:
-        :return:
-        """
-        if key in self.__headers:
-            current = self.__headers[key]
-            if not isinstance(current, (list, tuple)):
-                current = [current, ]
-            current.append(value)
-            self.__headers[key] = current
-        else:
-            raise KeyError("Missing key: {}".format(key))
-
-    def for_dump(self):
-        return self.__headers
-
-    def http_raw(self):
-        raw_headers = {}
-        headers = self.for_dump()
-        for k, v in headers.items():
-            if isinstance(v, list):
-                raw_headers[k] = ", ".join(headers.get(k))
-
-        return raw_headers
-
-    def delete(self, key):
-        if self.get(key) is not None:
-            del self.__headers[key]
-
-    def __iter__(self):
-        return iter(self.__headers.items())
-
-    def keys(self):
-        return self.__headers.keys()
-
-    def items(self):
-        return self.__headers.items()
-
-    def values(self):
-        return self.__headers.values()
-
-
-def decap_headers(hdsr):
-    ctx_headers = GoLikeHeaders({})
-    for k, v in hdsr.items():
-        if k.startswith(constants.FN_HTTP_PREFIX):
-            ctx_headers.set(k.lstrip(constants.FN_HTTP_PREFIX), v)
-        else:
-            ctx_headers.set(k, v)
+def decap_headers(hdsr, merge=True):
+    ctx_headers = {}
+    if hdsr is not None:
+        for k, v in hdsr.items():
+            k = k.lower()
+            if k.startswith(constants.FN_HTTP_PREFIX):
+                push_header(ctx_headers, k[len(constants.FN_HTTP_PREFIX):], v)
+            elif merge:
+                # http headers override functions headers in context
+                # this is not ideal but it's the more correct view from the
+                # consumer perspective than random choice and for things
+                # like host headers
+                if k not in ctx_headers:
+                    ctx_headers[k] = v
     return ctx_headers
 
 
-def encap_headers(headers, status=None, content_type=None):
-    new_headers = GoLikeHeaders({})
-    for k, v in headers.items():
-        if not k.startswith(constants.CONTENT_TYPE):
-            new_headers.set(constants.FN_HTTP_PREFIX + k, v)
+def push_header(input_map, key, value):
+    if key not in input_map:
+        input_map[key] = value
+        return
+
+    current_val = input_map[key]
+
+    if isinstance(current_val, list):
+        if isinstance(value, list):  # both lists concat
+            input_map[key] = current_val + value
+        else:  # copy and append current value
+            new_val = current_val.copy()
+            new_val.append(value)
+            input_map[key] = new_val
+    else:
+        if isinstance(value, list):  # copy new list value and prepend current
+            new_value = value.copy()
+            new_value.insert(0, current_val)
+            input_map[key] = new_value
+        else:  # both non-lists create a new list
+            input_map[key] = [current_val, value]
+
+
+def encap_headers(headers, status=None):
+    new_headers = {}
+    if headers is not None:
+        for k, v in headers.items():
+            k = k.lower()
+            if k.startswith(constants.FN_HTTP_PREFIX):  # by default merge
+                push_header(new_headers, k, v)
+            if (k == constants.CONTENT_TYPE
+                    or k == constants.FN_FDK_VERSION):  # but don't merge these
+                new_headers[k] = v
+            else:
+                push_header(new_headers, constants.FN_HTTP_PREFIX + k, v)
 
     if status is not None:
-        new_headers.set(constants.FN_HTTP_STATUS, str(status))
-    if content_type is not None:
-        new_headers.set(constants.CONTENT_TYPE, content_type)
+        new_headers[constants.FN_HTTP_STATUS] = str(status)
+
     return new_headers

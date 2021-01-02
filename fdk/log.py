@@ -1,35 +1,62 @@
-# All Rights Reserved.
 #
-#    Licensed under the Apache License, Version 2.0 (the "License"); you may
-#    not use this file except in compliance with the License. You may obtain
-#    a copy of the License at
+# Copyright (c) 2019, 2020 Oracle and/or its affiliates. All rights reserved.
 #
-#         http://www.apache.org/licenses/LICENSE-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-#    License for the specific language governing permissions and limitations
-#    under the License.
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 import logging
 import os
 import sys
+from contextvars import ContextVar
+
+
+__fn_request_id__ = ContextVar("fn_request_id", default=None)
+
+
+def set_request_id(rid):
+    __fn_request_id__.set(rid)
+
+
+class RequestFormatter(logging.Formatter):
+    def format(self, record):
+        record.fn_request_id = __fn_request_id__.get()
+        return super().format(record)
 
 
 def __setup_logger():
+    fdk_debug = os.environ.get("FDK_DEBUG") in [
+        'true', '1', 't', 'y', 'yes', 'yeah', 'yup', 'certainly', 'uh-huh']
+
+    logging.getLogger("asyncio").setLevel(logging.WARNING)
     root = logging.getLogger()
     root.setLevel(logging.DEBUG)
+
     ch = logging.StreamHandler(sys.stderr)
-    formatter = logging.Formatter(
-        '%(asctime)s - '
+    formatter = RequestFormatter(
+        '%(fn_request_id)s - '
         '%(name)s - '
         '%(levelname)s - '
         '%(message)s'
     )
     ch.setFormatter(formatter)
     root.addHandler(ch)
-    return root
+    logger = logging.getLogger("fdk")
+    if fdk_debug:
+        logger.setLevel(logging.DEBUG)
+    else:
+        logger.setLevel(logging.WARNING)
+
+    return logger
 
 
 __log__ = __setup_logger()
@@ -40,7 +67,11 @@ def get_logger():
 
 
 def log(message):
-    fdk_debug = os.environ.get("FDK_DEBUG")
-    if fdk_debug in ['true', '1', 't', 'y', 'yes',
-                     'yeah', 'yup', 'certainly', 'uh-huh']:
-        __log__.info(message)
+    __log__.debug(message)
+
+
+__request_log__ = logging.getLogger('fn')
+
+
+def get_request_log():
+    return __request_log__

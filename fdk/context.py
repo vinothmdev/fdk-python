@@ -1,45 +1,26 @@
-# All Rights Reserved.
 #
-#    Licensed under the Apache License, Version 2.0 (the "License"); you may
-#    not use this file except in compliance with the License. You may obtain
-#    a copy of the License at
+# Copyright (c) 2019, 2020 Oracle and/or its affiliates. All rights reserved.
 #
-#         http://www.apache.org/licenses/LICENSE-2.0
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
 #
-#    Unless required by applicable law or agreed to in writing, software
-#    distributed under the License is distributed on an "AS IS" BASIS, WITHOUT
-#    WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied. See the
-#    License for the specific language governing permissions and limitations
-#    under the License.
+#     http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+#
 
 import datetime as dt
+import io
 import os
 
 from fdk import constants
 from fdk import headers as hs
-
-
-def set_response_headers(current_headers, new_headers,
-                         status_code, content_type=None):
-    if isinstance(new_headers, dict):
-        new_headers = hs.GoLikeHeaders(new_headers)
-    elif isinstance(new_headers, hs.GoLikeHeaders):
-        pass
-    else:
-        raise TypeError(
-            "Invalid headers type: {}, only dict allowed."
-            .format(type(new_headers))
-        )
-
-    new_headers = hs.encap_headers(
-        new_headers,
-        status=status_code,
-        content_type=content_type
-    )
-    for k, v in new_headers.items():
-        current_headers.set(k, v)
-
-    return current_headers
+from fdk import log
 
 
 class InvokeContext(object):
@@ -47,25 +28,51 @@ class InvokeContext(object):
     def __init__(self, app_id, fn_id, call_id,
                  content_type="application/octet-stream",
                  deadline=None, config=None,
-                 headers=None, arguments=None,
-                 request_url=None, method="POST",
-                 fn_format=None):
+                 headers=None, request_url=None,
+                 method="POST", fn_format=None):
         """
         Request context here to be a placeholder
         for request-specific attributes
+        :param app_id: Fn App ID
+        :type app_id: str
+        :param fn_id: Fn App Fn ID
+        :type fn_id: str
+        :param call_id: Fn call ID
+        :type call_id: str
+        :param content_type: request content type
+        :type content_type: str
+        :param deadline: request deadline
+        :type deadline: str
+        :param config: an app/fn config
+        :type config: dict
+        :param headers: request headers
+        :type headers: dict
+        :param request_url: request URL
+        :type request_url: str
+        :param method: request method
+        :type method: str
+        :param fn_format: function format
+        :type fn_format: str
         """
         self.__app_id = app_id
         self.__fn_id = fn_id
         self.__call_id = call_id
         self.__config = config if config else {}
         self.__headers = headers if headers else {}
-        self._arguments = {} if not arguments else arguments
+        self.__http_headers = {}
         self.__deadline = deadline
         self.__content_type = content_type
         self._request_url = request_url
         self._method = method
-        self.__response_headers = hs.GoLikeHeaders({})
+        self.__response_headers = {}
         self.__fn_format = fn_format
+
+        log.log("request headers. gateway: {0} {1}"
+                .format(self.__is_gateway(), headers))
+
+        if self.__is_gateway():
+            self.__headers = hs.decap_headers(headers, True)
+            self.__http_headers = hs.decap_headers(headers, False)
 
     def AppID(self):
         return self.__app_id
@@ -82,6 +89,9 @@ class InvokeContext(object):
     def Headers(self):
         return self.__headers
 
+    def HTTPHeaders(self):
+        return self.__http_headers
+
     def Format(self):
         return self.__fn_format
 
@@ -92,66 +102,60 @@ class InvokeContext(object):
             return now.isoformat()
         return self.__deadline
 
-    def SetResponseHeaders(self, headers, status_code, content_type=None):
-        self.__response_headers = set_response_headers(
-            self.GetResponseHeaders(), headers, status_code,
-            content_type=content_type)
+    def SetResponseHeaders(self, headers, status_code):
+        log.log("setting headers. gateway: {0}".format(self.__is_gateway()))
+        if self.__is_gateway():
+            headers = hs.encap_headers(headers, status=status_code)
+
+        for k, v in headers.items():
+            self.__response_headers[k.lower()] = v
 
     def GetResponseHeaders(self):
         return self.__response_headers
-
-    def HTTPContext(self):
-        return HTTPGatewayContext(self)
-
-
-class HTTPGatewayContext(object):
-    def __init__(self, invoke_context: InvokeContext):
-        self.__headers = hs.decap_headers(invoke_context.Headers())
-        self.__invoke_context = invoke_context
-        self.__response_headers = hs.GoLikeHeaders({})
 
     def RequestURL(self):
-        return self.__invoke_context._request_url
+        return self._request_url
 
     def Method(self):
-        return self.__invoke_context._method
+        return self._method
 
-    def Headers(self):
-        return self.__headers
-
-    def SetResponseHeaders(self, headers, status_code, content_type=None):
-        self.__response_headers = set_response_headers(
-            self.GetResponseHeaders(), headers, status_code,
-            content_type=content_type)
-
-    def GetResponseHeaders(self):
-        return self.__response_headers
-
-    def Format(self):
-        return self.__invoke_context.Format()
+    def __is_gateway(self):
+        return (constants.FN_INTENT in self.__headers
+                and self.__headers.get(constants.FN_INTENT)
+                == constants.INTENT_HTTP_REQUEST)
 
 
-def context_from_format(format_def, **kwargs) -> (InvokeContext, object):
+def context_from_format(format_def: str, **kwargs) -> (
+        InvokeContext, io.BytesIO):
+    """
+    Creates a context from request
+    :param format_def: function format
+    :type format_def: str
+    :param kwargs: request-specific map of parameters
+    :return: invoke context and data
+    :rtype: tuple
+    """
+
     app_id = os.environ.get(constants.FN_APP_ID)
     fn_id = os.environ.get(constants.FN_ID)
 
     if format_def == constants.HTTPSTREAM:
         data = kwargs.get("data")
-        request = kwargs.get("request")
+        headers = kwargs.get("headers")
 
-        method = request.headers.get(constants.FN_HTTP_METHOD)
-        request_url = request.headers.get(
+        method = headers.get(constants.FN_HTTP_METHOD)
+        request_url = headers.get(
             constants.FN_HTTP_REQUEST_URL)
-        deadline = request.headers.get(constants.FN_DEADLINE)
-        call_id = request.headers.get(constants.FN_CALL_ID)
-        content_type = request.content_type
+        deadline = headers.get(constants.FN_DEADLINE)
+        call_id = headers.get(constants.FN_CALL_ID)
+        content_type = headers.get(constants.CONTENT_TYPE)
 
         ctx = InvokeContext(
             app_id, fn_id, call_id,
             content_type=content_type,
             deadline=deadline,
             config=os.environ,
-            headers=hs.GoLikeHeaders(dict(request.headers)),
+            headers=headers,
             method=method,
             request_url=request_url,
             fn_format=constants.HTTPSTREAM,
